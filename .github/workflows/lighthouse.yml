@@ -43,7 +43,7 @@ jobs:
 
             # Store Results in Database
             psql "${{ secrets.DATABASE_URL }}" <<EOF
-            INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
-            VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());
-            EOF
+INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
+VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());
+EOF
           done
