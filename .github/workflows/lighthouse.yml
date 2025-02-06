@@ -19,9 +19,12 @@ jobs:
       - name: Install jq (JSON Parser)
         run: sudo apt-get install -y jq
 
+      - name: Install Chromium
+        run: sudo apt-get install -y chromium-browser
+
       - name: Run Lighthouse on Target URL
         run: |
-          lighthouse ${{ secrets.TARGET_URL }} --output=json --quiet > report.json
+          lighthouse ${{ secrets.TARGET_URL }} --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-gpu --disable-dev-shm-usage" > report.json
 
       - name: Extract Lighthouse Scores
         id: extract_scores
