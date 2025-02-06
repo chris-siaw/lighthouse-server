@@ -1,8 +1,6 @@
 name: Run Lighthouse and Store Results
 
 on:
-  schedule:
-    - cron: '0 12 * * *'  # Runs daily at 12:00 UTC
   workflow_dispatch:      # Allows manual execution
 
 jobs:
@@ -10,30 +8,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Install Lighthouse CLI
         run: npm install -g lighthouse
 
       - name: Install jq (JSON Parser)
         run: sudo apt-get install -y jq
 
-      - name: Install Chromium
-        run: sudo apt-get install -y chromium-browser
-
       - name: Run Lighthouse on Target URL
         run: |
-          lighthouse ${{ secrets.TARGET_URL }} --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-gpu --disable-dev-shm-usage" > report.json
+          lighthouse ${{ secrets.TARGET_URL }} --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" > report.json
 
       - name: Extract Lighthouse Scores
         id: extract_scores
         run: |
-          echo "PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)" >> $GITHUB_ENV
-          echo "ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)" >> $GITHUB_ENV
-          echo "BEST_PRACTICES=$(jq -r '.categories.\"best-practices\".score * 100' report.json)" >> $GITHUB_ENV
-          echo "SEO=$(jq -r '.categories.seo.score * 100' report.json)" >> $GITHUB_ENV
-          echo "URL=${{ secrets.TARGET_URL }}" >> $GITHUB_ENV
+          PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
+          ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
+          BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
+          SEO=$(jq -r '.categories.seo.score * 100' report.json)
+          URL=${{ secrets.TARGET_URL }}
+
+          # Ensure no values are missing
+          if [[ -z "$PERFORMANCE" || -z "$ACCESSIBILITY" || -z "$BEST_PRACTICES" || -z "$SEO" ]]; then
+            echo "Error: One or more extracted values are empty."
+            exit 1
+          fi
+
+          echo "PERFORMANCE=$PERFORMANCE" >> $GITHUB_ENV
+          echo "ACCESSIBILITY=$ACCESSIBILITY" >> $GITHUB_ENV
+          echo "BEST_PRACTICES=$BEST_PRACTICES" >> $GITHUB_ENV
+          echo "SEO=$SEO" >> $GITHUB_ENV
+          echo "URL=$URL" >> $GITHUB_ENV
+
+      - name: Log Extracted Scores (Debugging)
+        run: |
+          echo "URL: $URL"
+          echo "Performance: $PERFORMANCE"
+          echo "Accessibility: $ACCESSIBILITY"
+          echo "Best Practices: $BEST_PRACTICES"
+          echo "SEO: $SEO"
 
       - name: Store Lighthouse Scores in Vercel Postgres (NeonDB)
         run: |
