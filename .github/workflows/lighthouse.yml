@@ -1,6 +1,8 @@
-name: Run Lighthouse and Store Results
+name: Run Lighthouse and Store Results for Multiple Pages
 
 on:
+  schedule:
+    - cron: '0 12 * * *'  # Runs daily at 12:00 UTC
   workflow_dispatch:      # Allows manual execution
 
 jobs:
@@ -14,42 +16,34 @@ jobs:
       - name: Install jq (JSON Parser)
         run: sudo apt-get install -y jq
 
-      - name: Run Lighthouse on Target URL
+      - name: Loop Through URLs from Secret
         run: |
-          lighthouse ${{ secrets.TARGET_URL }} --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" > report.json
+          # Fetch URLs from GitHub Secrets
+          TARGET_URLS="${{ secrets.TARGET_URL }}"
+          
+          # Split URLs into an array
+          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URLS"
+          
+          # Loop through each URL
+          for url in "${URL_ARRAY[@]}"; do
+            echo "Running Lighthouse for $url"
+            lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" > report.json
 
-      - name: Extract Lighthouse Scores
-        id: extract_scores
-        run: |
-          PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
-          ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
-          BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
-          SEO=$(jq -r '.categories.seo.score * 100' report.json)
-          URL=${{ secrets.TARGET_URL }}
+            # Extract Lighthouse Scores
+            PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
+            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
+            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
+            SEO=$(jq -r '.categories.seo.score * 100' report.json)
 
-          # Ensure no values are missing
-          if [[ -z "$PERFORMANCE" || -z "$ACCESSIBILITY" || -z "$BEST_PRACTICES" || -z "$SEO" ]]; then
-            echo "Error: One or more extracted values are empty."
-            exit 1
-          fi
+            # Log Scores
+            echo "Performance: $PERFORMANCE"
+            echo "Accessibility: $ACCESSIBILITY"
+            echo "Best Practices: $BEST_PRACTICES"
+            echo "SEO: $SEO"
 
-          echo "PERFORMANCE=$PERFORMANCE" >> $GITHUB_ENV
-          echo "ACCESSIBILITY=$ACCESSIBILITY" >> $GITHUB_ENV
-          echo "BEST_PRACTICES=$BEST_PRACTICES" >> $GITHUB_ENV
-          echo "SEO=$SEO" >> $GITHUB_ENV
-          echo "URL=$URL" >> $GITHUB_ENV
-
-      - name: Log Extracted Scores (Debugging)
-        run: |
-          echo "URL: $URL"
-          echo "Performance: $PERFORMANCE"
-          echo "Accessibility: $ACCESSIBILITY"
-          echo "Best Practices: $BEST_PRACTICES"
-          echo "SEO: $SEO"
-
-      - name: Store Lighthouse Scores in Vercel Postgres (NeonDB)
-        run: |
-          psql "${{ secrets.DATABASE_URL }}" <<EOF
-          INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
-          VALUES ('$URL', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());
-          EOF
+            # Store Results in Database
+            psql "${{ secrets.DATABASE_URL }}" <<EOF
+            INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
+            VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());
+            EOF
+          done
