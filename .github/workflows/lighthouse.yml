@@ -13,6 +13,7 @@ jobs:
       - name: Install Lighthouse and Puppeteer
         run: |
           npm install -g lighthouse puppeteer
+          npm list -g lighthouse puppeteer
 
       - name: Install jq (JSON Parser)
         run: sudo apt-get install -y jq
@@ -25,38 +26,61 @@ jobs:
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
 
-            # Create a unique directory for each run
-            REPORT_DIR="$(mktemp -d)" || { echo "Failed to create temp directory"; continue; }
+            # Create a unique directory for each run with full permissions
+            REPORT_DIR="/tmp/lighthouse-$(date +%s)"
+            mkdir -p "$REPORT_DIR"
+            chmod 777 "$REPORT_DIR"
+            
             REPORT_HTML="$REPORT_DIR/report.html"
             REPORT_JSON="$REPORT_DIR/report.json"
             
-            # Run Lighthouse with Puppeteer Chrome
+            echo "Will save reports to: $REPORT_DIR"
+            
+            # Run Lighthouse with explicit paths
             if ! lighthouse "$url" \
               --output=json \
               --output=html \
               --quiet \
               --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" \
               --output-path="$REPORT_HTML" \
+              --save-assets \
+              --view \
               --max-wait-for-load=30000 \
               --only-categories=performance,accessibility,best-practices,seo \
-              > "$REPORT_JSON"; then
+              > "$REPORT_JSON" 2>&1; then
               echo "Lighthouse analysis failed for $url"
+              echo "Contents of report directory:"
+              ls -la "$REPORT_DIR"
               rm -rf "$REPORT_DIR"
               continue
             fi
+
+            echo "Lighthouse analysis completed. Checking for report files..."
+            ls -la "$REPORT_DIR"
 
             # Check if report files were generated
             if [ ! -f "$REPORT_HTML" ] || [ ! -f "$REPORT_JSON" ]; then
               echo "Lighthouse report files not generated for $url"
+              echo "Contents of report directory:"
+              ls -la "$REPORT_DIR"
               rm -rf "$REPORT_DIR"
               continue
             fi
 
-            # Extract performance metrics
-            read PERFORMANCE ACCESSIBILITY BEST_PRACTICES SEO <<< $(jq -r '.categories | "\(.performance.score * 100) \(.accessibility.score * 100) \(.\"best-practices\".score * 100) \(.seo.score * 100)"' "$REPORT_JSON")
+            echo "Report files found. Processing results..."
+
+            # Extract performance metrics with error handling
+            if ! read PERFORMANCE ACCESSIBILITY BEST_PRACTICES SEO <<< $(jq -r '.categories | "\(.performance.score * 100) \(.accessibility.score * 100) \(.\"best-practices\".score * 100) \(.seo.score * 100)"' "$REPORT_JSON"); then
+              echo "Failed to extract metrics from JSON report"
+              cat "$REPORT_JSON"
+              rm -rf "$REPORT_DIR"
+              continue
+            fi
 
             # Upload HTML report to Vercel Blob Storage
             REPORT_NAME=$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html
+            echo "Uploading report to Vercel Blob Storage..."
+            
             if ! curl -f -X PUT -H "Authorization: Bearer ${{ secrets.VERCEL_BLOB_TOKEN }}" \
                  -H "Content-Type: text/html" \
                  --data-binary "@$REPORT_HTML" \
@@ -73,6 +97,8 @@ jobs:
             # Store Results in Database
             url_escaped=$(echo "$url" | sed 's/['"'"']/\\&/g')
             report_url_escaped=$(echo "$REPORT_URL" | sed 's/['"'"']/\\&/g')
+            echo "Storing results in database..."
+            
             if ! echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, report_url, timestamp)
             VALUES ('$url_escaped', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, '$report_url_escaped', NOW());" | psql "${{ secrets.DATABASE_URL }}"; then
               echo "Failed to store results in database for $url"
@@ -82,5 +108,5 @@ jobs:
 
             # Clean up temporary files
             rm -rf "$REPORT_DIR"
-            echo "Cleaned up temp files for $url"
+            echo "Successfully processed $url"
           done
