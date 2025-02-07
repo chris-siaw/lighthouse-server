@@ -28,23 +28,37 @@ jobs:
 
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
-            if ! lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path=report.html > report.json; then
+
+            # Create a unique directory for each run
+            REPORT_DIR="$(mktemp -d)" || { echo "Failed to create temp directory"; continue; }
+            REPORT_HTML="$REPORT_DIR/report.html"
+            REPORT_JSON="$REPORT_DIR/report.json"
+            
+            # Run Lighthouse and output results
+            if ! lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="$REPORT_HTML" > "$REPORT_JSON"; then
               echo "Lighthouse analysis failed for $url"
+              rm -rf "$REPORT_DIR"
               continue
             fi
 
-            PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
-            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
-            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
-            SEO=$(jq -r '.categories.seo.score * 100' report.json)
+            # Check if report files were generated
+            if [ ! -f "$REPORT_HTML" ] || [ ! -f "$REPORT_JSON" ]; then
+              echo "Lighthouse report files not generated for $url"
+              rm -rf "$REPORT_DIR"
+              continue
+            fi
+
+            # Extract performance metrics
+            read PERFORMANCE ACCESSIBILITY BEST_PRACTICES SEO <<< $(jq -r '.categories | "\(.performance.score * 100) \(.accessibility.score * 100) \(.\"best-practices\".score * 100) \(.seo.score * 100)"' "$REPORT_JSON")
 
             # Upload HTML report to Vercel Blob Storage
             REPORT_NAME=$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html
             if ! curl -f -X PUT -H "Authorization: Bearer ${{ secrets.VERCEL_BLOB_TOKEN }}" \
                  -H "Content-Type: text/html" \
-                 --data-binary @report.html \
+                 --data-binary "@$REPORT_HTML" \
                  "https://lighthouse-storage.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"; then
-              echo "Failed to upload report to Vercel Blob Storage"
+              echo "Failed to upload report to Vercel Blob Storage for $url"
+              rm -rf "$REPORT_DIR"
               continue
             fi
 
@@ -58,6 +72,11 @@ jobs:
             if ! echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, report_url, timestamp)
             VALUES ('$url_escaped', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, '$report_url_escaped', NOW());" | psql "${{ secrets.DATABASE_URL }}"; then
               echo "Failed to store results in database for $url"
+              rm -rf "$REPORT_DIR"
               continue
             fi
+
+            # Clean up temporary files
+            rm -rf "$REPORT_DIR"
+            echo "Cleaned up temp files for $url"
           done
