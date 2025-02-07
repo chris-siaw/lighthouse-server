@@ -72,21 +72,21 @@ jobs:
             BEST_PRACTICES=$(echo "$METRICS" | jq -r '.bestPractices * 100')
             SEO=$(echo "$METRICS" | jq -r '.seo * 100')
 
-            # Upload HTML report to Vercel Blob Storage
+            # Upload HTML report to Vercel Blob Storage using the public URL format
             REPORT_NAME=$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html
             echo "Uploading report to Vercel Blob Storage..."
             
             if ! curl -f -X PUT -H "Authorization: Bearer ${{ secrets.VERCEL_BLOB_TOKEN }}" \
                  -H "Content-Type: text/html" \
                  --data-binary "@$REPORT_DIR/report.report.html" \
-                 "https://lighthouse-storage.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"; then
+                 "https://lighthouse-storage.public.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"; then
               echo "Failed to upload report to Vercel Blob Storage for $url"
               rm -rf "$REPORT_DIR"
               continue
             fi
 
-            # Generate Public URL for the HTML Report
-            REPORT_URL="https://lighthouse-storage.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"
+            # Generate Public URL for the HTML Report using the public URL format
+            REPORT_URL="https://lighthouse-storage.public.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"
             echo "Generated Report URL: $REPORT_URL"
 
             # Store Results in Database
