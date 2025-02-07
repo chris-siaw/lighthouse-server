@@ -64,13 +64,13 @@ jobs:
 
             echo "Report files found. Processing results..."
 
-            # Extract performance metrics with error handling
-            if ! read PERFORMANCE ACCESSIBILITY BEST_PRACTICES SEO <<< $(jq -r '.categories | "\(.performance.score * 100) \(.accessibility.score * 100) \(.\"best-practices\".score * 100) \(.seo.score * 100)"' "$REPORT_DIR/report.report.json"); then
-              echo "Failed to extract metrics from JSON report"
-              cat "$REPORT_DIR/report.report.json"
-              rm -rf "$REPORT_DIR"
-              continue
-            fi
+            # Extract performance metrics with proper shell quoting
+            METRICS=$(jq -r '{"performance": .categories.performance.score, "accessibility": .categories.accessibility.score, "bestPractices": .categories["best-practices"].score, "seo": .categories.seo.score}' "$REPORT_DIR/report.report.json")
+            
+            PERFORMANCE=$(echo "$METRICS" | jq -r '.performance * 100')
+            ACCESSIBILITY=$(echo "$METRICS" | jq -r '.accessibility * 100')
+            BEST_PRACTICES=$(echo "$METRICS" | jq -r '.bestPractices * 100')
+            SEO=$(echo "$METRICS" | jq -r '.seo * 100')
 
             # Upload HTML report to Vercel Blob Storage
             REPORT_NAME=$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html
