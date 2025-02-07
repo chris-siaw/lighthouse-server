@@ -31,23 +31,18 @@ jobs:
             mkdir -p "$REPORT_DIR"
             chmod 777 "$REPORT_DIR"
             
-            REPORT_HTML="$REPORT_DIR/report.html"
-            REPORT_JSON="$REPORT_DIR/report.json"
-            
             echo "Will save reports to: $REPORT_DIR"
             
-            # Run Lighthouse with explicit paths
+            # Run Lighthouse with base filename
             if ! lighthouse "$url" \
               --output=json \
               --output=html \
               --quiet \
               --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" \
-              --output-path="$REPORT_HTML" \
+              --output-path="$REPORT_DIR/report" \
               --save-assets \
-              --view \
               --max-wait-for-load=30000 \
-              --only-categories=performance,accessibility,best-practices,seo \
-              > "$REPORT_JSON" 2>&1; then
+              --only-categories=performance,accessibility,best-practices,seo; then
               echo "Lighthouse analysis failed for $url"
               echo "Contents of report directory:"
               ls -la "$REPORT_DIR"
@@ -58,8 +53,8 @@ jobs:
             echo "Lighthouse analysis completed. Checking for report files..."
             ls -la "$REPORT_DIR"
 
-            # Check if report files were generated
-            if [ ! -f "$REPORT_HTML" ] || [ ! -f "$REPORT_JSON" ]; then
+            # Check if report files were generated (using correct filenames)
+            if [ ! -f "$REPORT_DIR/report.report.html" ] || [ ! -f "$REPORT_DIR/report.report.json" ]; then
               echo "Lighthouse report files not generated for $url"
               echo "Contents of report directory:"
               ls -la "$REPORT_DIR"
@@ -70,9 +65,9 @@ jobs:
             echo "Report files found. Processing results..."
 
             # Extract performance metrics with error handling
-            if ! read PERFORMANCE ACCESSIBILITY BEST_PRACTICES SEO <<< $(jq -r '.categories | "\(.performance.score * 100) \(.accessibility.score * 100) \(.\"best-practices\".score * 100) \(.seo.score * 100)"' "$REPORT_JSON"); then
+            if ! read PERFORMANCE ACCESSIBILITY BEST_PRACTICES SEO <<< $(jq -r '.categories | "\(.performance.score * 100) \(.accessibility.score * 100) \(.\"best-practices\".score * 100) \(.seo.score * 100)"' "$REPORT_DIR/report.report.json"); then
               echo "Failed to extract metrics from JSON report"
-              cat "$REPORT_JSON"
+              cat "$REPORT_DIR/report.report.json"
               rm -rf "$REPORT_DIR"
               continue
             fi
@@ -83,7 +78,7 @@ jobs:
             
             if ! curl -f -X PUT -H "Authorization: Bearer ${{ secrets.VERCEL_BLOB_TOKEN }}" \
                  -H "Content-Type: text/html" \
-                 --data-binary "@$REPORT_HTML" \
+                 --data-binary "@$REPORT_DIR/report.report.html" \
                  "https://lighthouse-storage.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"; then
               echo "Failed to upload report to Vercel Blob Storage for $url"
               rm -rf "$REPORT_DIR"
