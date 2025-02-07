@@ -10,13 +10,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install Lighthouse and Puppeteer
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
         run: |
           npm install -g lighthouse puppeteer
-          npm list -g lighthouse puppeteer
-
-      - name: Install jq (JSON Parser)
-        run: sudo apt-get install -y jq
+          npm install @vercel/blob
+          npm install jq
 
       - name: Loop Through URLs from Secret
         run: |
@@ -72,21 +78,45 @@ jobs:
             BEST_PRACTICES=$(echo "$METRICS" | jq -r '.bestPractices * 100')
             SEO=$(echo "$METRICS" | jq -r '.seo * 100')
 
-            # Upload HTML report to Vercel Blob Storage using the public URL format
-            REPORT_NAME=$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html
+            # Create Node.js script for uploading to Vercel Blob
+            cat > upload.js << 'EOL'
+            import { put } from '@vercel/blob';
+            import { readFileSync } from 'fs';
+
+            async function uploadToBlob(filePath, fileName) {
+              const file = readFileSync(filePath);
+              const blob = await put(fileName, file, {
+                access: 'public',
+                token: process.env.VERCEL_BLOB_TOKEN
+              });
+              return blob.url;
+            }
+
+            const filePath = process.argv[2];
+            const fileName = process.argv[3];
+
+            uploadToBlob(filePath, fileName)
+              .then(url => {
+                console.log(url);
+                process.exit(0);
+              })
+              .catch(error => {
+                console.error(error);
+                process.exit(1);
+              });
+            EOL
+
+            # Upload HTML report to Vercel Blob Storage using the SDK
+            REPORT_NAME="lighthouse-reports/$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html"
             echo "Uploading report to Vercel Blob Storage..."
             
-            if ! curl -f -X PUT -H "Authorization: Bearer ${{ secrets.VERCEL_BLOB_TOKEN }}" \
-                 -H "Content-Type: text/html" \
-                 --data-binary "@$REPORT_DIR/report.report.html" \
-                 "https://lighthouse-storage.public.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"; then
+            REPORT_URL=$(node upload.js "$REPORT_DIR/report.report.html" "$REPORT_NAME")
+            if [ $? -ne 0 ]; then
               echo "Failed to upload report to Vercel Blob Storage for $url"
               rm -rf "$REPORT_DIR"
               continue
             fi
 
-            # Generate Public URL for the HTML Report using the public URL format
-            REPORT_URL="https://lighthouse-storage.public.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"
             echo "Generated Report URL: $REPORT_URL"
 
             # Store Results in Database
