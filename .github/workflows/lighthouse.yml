@@ -10,13 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install Chrome
+      - name: Install Lighthouse and Puppeteer
         run: |
-          wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-          sudo apt install ./google-chrome-stable_current_amd64.deb
-
-      - name: Install Lighthouse CLI
-        run: npm install -g lighthouse
+          npm install -g lighthouse puppeteer
 
       - name: Install jq (JSON Parser)
         run: sudo apt-get install -y jq
@@ -34,14 +30,15 @@ jobs:
             REPORT_HTML="$REPORT_DIR/report.html"
             REPORT_JSON="$REPORT_DIR/report.json"
             
-            # Run Lighthouse with additional Chrome flags for stability
+            # Run Lighthouse with Puppeteer Chrome
             if ! lighthouse "$url" \
               --output=json \
               --output=html \
               --quiet \
-              --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --disable-setuid-sandbox --no-zygote --single-process" \
+              --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" \
               --output-path="$REPORT_HTML" \
               --max-wait-for-load=30000 \
+              --only-categories=performance,accessibility,best-practices,seo \
               > "$REPORT_JSON"; then
               echo "Lighthouse analysis failed for $url"
               rm -rf "$REPORT_DIR"
