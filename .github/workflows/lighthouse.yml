@@ -34,8 +34,15 @@ jobs:
             REPORT_HTML="$REPORT_DIR/report.html"
             REPORT_JSON="$REPORT_DIR/report.json"
             
-            # Run Lighthouse and output results
-            if ! lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="$REPORT_HTML" > "$REPORT_JSON"; then
+            # Run Lighthouse with additional Chrome flags for stability
+            if ! lighthouse "$url" \
+              --output=json \
+              --output=html \
+              --quiet \
+              --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --disable-setuid-sandbox --no-zygote --single-process" \
+              --output-path="$REPORT_HTML" \
+              --max-wait-for-load=30000 \
+              > "$REPORT_JSON"; then
               echo "Lighthouse analysis failed for $url"
               rm -rf "$REPORT_DIR"
               continue
