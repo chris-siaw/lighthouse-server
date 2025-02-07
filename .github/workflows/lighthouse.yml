@@ -1,4 +1,4 @@
-name: Run Lighthouse and Store Results for Multiple Pages
+name: Run Lighthouse and Store Results with Blob Storage
 
 on:
   schedule:
@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Install Chrome
+        run: |
+          wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt install ./google-chrome-stable_current_amd64.deb
+
       - name: Install Lighthouse CLI
         run: npm install -g lighthouse
 
@@ -18,30 +23,41 @@ jobs:
 
       - name: Loop Through URLs from Secret
         run: |
-          # Fetch URLs from GitHub Secrets
-          TARGET_URLS="${{ secrets.TARGET_URL }}"
-          
-          # Split URLs into an array
-          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URLS"
-          
-          # Loop through each URL
+          TARGET_URL="${{ secrets.TARGET_URL }}"
+          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URL"
+
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
-            lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" > report.json
+            if ! lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path=report.html > report.json; then
+              echo "Lighthouse analysis failed for $url"
+              continue
+            fi
 
             PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
             ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
             BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
             SEO=$(jq -r '.categories.seo.score * 100' report.json)
 
-            # Log Variables for Debugging
-            echo "URL: $url"
-            echo "Performance: $PERFORMANCE"
-            echo "Accessibility: $ACCESSIBILITY"
-            echo "Best Practices: $BEST_PRACTICES"
-            echo "SEO: $SEO"
+            # Upload HTML report to Vercel Blob Storage
+            REPORT_NAME=$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html
+            if ! curl -f -X PUT -H "Authorization: Bearer ${{ secrets.VERCEL_BLOB_TOKEN }}" \
+                 -H "Content-Type: text/html" \
+                 --data-binary @report.html \
+                 "https://lighthouse-storage.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"; then
+              echo "Failed to upload report to Vercel Blob Storage"
+              continue
+            fi
+
+            # Generate Public URL for the HTML Report
+            REPORT_URL="https://lighthouse-storage.blob.vercel-storage.com/lighthouse-reports/$REPORT_NAME"
+            echo "Generated Report URL: $REPORT_URL"
 
             # Store Results in Database
-            echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
-            VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());" | psql "${{ secrets.DATABASE_URL }}"
+            url_escaped=$(echo "$url" | sed 's/['"'"']/\\&/g')
+            report_url_escaped=$(echo "$REPORT_URL" | sed 's/['"'"']/\\&/g')
+            if ! echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, report_url, timestamp)
+            VALUES ('$url_escaped', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, '$report_url_escaped', NOW());" | psql "${{ secrets.DATABASE_URL }}"; then
+              echo "Failed to store results in database for $url"
+              continue
+            fi
           done
