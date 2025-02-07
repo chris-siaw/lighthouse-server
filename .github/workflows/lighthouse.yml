@@ -10,9 +10,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
@@ -82,38 +79,46 @@ jobs:
             SEO=$(echo "$METRICS" | jq -r '.seo * 100')
           
             # Create Node.js script for uploading to Vercel Blob
-            cat > upload.js << EOL
+            cat > "$REPORT_DIR/upload.mjs" << 'EOL'
             import { put } from '@vercel/blob';
             import { readFileSync } from 'fs';
-          
+
             async function uploadToBlob(filePath, fileName) {
-              const file = readFileSync(filePath);
-              const blob = await put(fileName, file, {
-                access: 'public',
-                token: process.env.VERCEL_BLOB_TOKEN
-              });
-              return blob.url;
+              try {
+                const file = readFileSync(filePath);
+                const blob = await put(fileName, file, {
+                  access: 'public',
+                  token: process.env.VERCEL_BLOB_TOKEN
+                });
+                return blob.url;
+              } catch (error) {
+                console.error('Upload error:', error);
+                process.exit(1);
+              }
             }
-          
+
             const filePath = process.argv[2];
             const fileName = process.argv[3];
-          
+
             uploadToBlob(filePath, fileName)
               .then(url => {
                 console.log(url);
                 process.exit(0);
               })
               .catch(error => {
-                console.error(error);
+                console.error('Error:', error);
                 process.exit(1);
               });
-          EOL
+            EOL
+          
+            # Make the script executable
+            chmod +x "$REPORT_DIR/upload.mjs"
           
             # Upload HTML report to Vercel Blob Storage using the SDK
             REPORT_NAME="lighthouse-reports/$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html"
             echo "Uploading report to Vercel Blob Storage..."
             
-            REPORT_URL=$(node upload.js "$REPORT_DIR/report.report.html" "$REPORT_NAME")
+            REPORT_URL=$(node "$REPORT_DIR/upload.mjs" "$REPORT_DIR/report.report.html" "$REPORT_NAME")
             if [ $? -ne 0 ]; then
               echo "Failed to upload report to Vercel Blob Storage for $url"
               rm -rf "$REPORT_DIR"
