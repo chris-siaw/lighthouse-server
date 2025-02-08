@@ -31,20 +31,20 @@ jobs:
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
 
-            # Run Lighthouse and generate JSON and HTML reports
-            lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="report" 2>&1
+            # Run Lighthouse and generate separate JSON and HTML reports
+            lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="report.json" --output-path="report.html"
 
             # Check if the JSON report exists
-            if [ ! -f report.report.json ]; then
-              echo "Error: Lighthouse did not generate report.report.json for $url. Skipping..."
+            if [ ! -f report.json ]; then
+              echo "Error: Lighthouse did not generate report.json for $url. Skipping..."
               continue
             fi
 
             # Extract scores using jq
-            PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.report.json)
-            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.report.json)
-            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.report.json)
-            SEO=$(jq -r '.categories.seo.score * 100' report.report.json)
+            PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
+            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
+            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
+            SEO=$(jq -r '.categories.seo.score * 100' report.json)
 
             # Log results for debugging
             echo "Performance: $PERFORMANCE, Accessibility: $ACCESSIBILITY, Best Practices: $BEST_PRACTICES, SEO: $SEO"
