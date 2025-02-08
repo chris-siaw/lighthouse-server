@@ -27,8 +27,8 @@ jobs:
           # Loop through each URL
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
-            lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" > report.json
-
+            lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="lighthouse-report.html"
+            
             PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
             ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
             BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
@@ -44,4 +44,24 @@ jobs:
             # Store Results in Database
             echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
             VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());" | psql "${{ secrets.DATABASE_URL }}"
+
+            # Rename report with URL as identifier
+            REPORT_FILENAME="lighthouse_$(echo $url | sed 's/[^a-zA-Z0-9]/_/g').html"
+            mv lighthouse-report.html "$REPORT_FILENAME"
+          done
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Install Dependencies
+        run: npm install @vercel/blob
+
+      - name: Upload Lighthouse Reports to Vercel Blob
+        env:
+          VERCEL_BLOB_TOKEN: ${{ secrets.VERCEL_BLOB_TOKEN }}
+        run: |
+          for report in lighthouse_*.html; do
+            node scripts/uploadToVercelBlob.js "$report"
           done
