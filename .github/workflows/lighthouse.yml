@@ -28,7 +28,7 @@ jobs:
           TARGET_URLS="${{ secrets.TARGET_URL }}"
           
           # Split URLs into an array
-          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URLS"
+          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URL"
           
           # Loop through each URL
           for url in "${URL_ARRAY[@]}"; do
@@ -99,7 +99,7 @@ jobs:
           for report in lighthouse_*.html; do
             if [ -f "$report" ]; then
               echo "Uploading: $report"
-              node lighthouse-server/scripts/uploadToVercelBlob.js "$report"
+              node scripts/uploadToVercelBlob.js "$report"
             else
               echo "Error: Report $report not found!"
             fi
