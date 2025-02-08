@@ -35,9 +35,12 @@ jobs:
             TEMP_DIR=$(mktemp -d)
             echo "Temporary directory created: $TEMP_DIR"
 
-            # Run Lighthouse and store reports in the temporary directory
-            lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" \
-              --output-path="$TEMP_DIR/report.json" \
+            # Run Lighthouse for JSON output
+            lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" \
+              --output-path="$TEMP_DIR/report.json"
+
+            # Run Lighthouse for HTML output
+            lighthouse "$url" --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" \
               --output-path="$TEMP_DIR/report.html"
 
             # Check if the JSON report exists
