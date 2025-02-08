@@ -21,17 +21,26 @@ jobs:
       - name: Install Lighthouse CLI
         run: npm install -g lighthouse
 
+      - name: Install @vercel/blob Dependency
+        run: npm install @vercel/blob
+
+      - name: Install PostgreSQL Client
+        run: sudo apt-get install -y postgresql-client
+
       - name: Install jq (JSON Parser)
         run: sudo apt-get install -y jq
 
-      - name: Install Chromium (if required)
+      - name: Install Chromium Browser
         run: sudo apt-get install -y chromium-browser
 
-      - name: Loop Through URLs, Upload Reports & Store Report URL in DB
+      - name: Loop Through URLs, Upload Reports & Insert into DB
+        env:
+          VERCEL_BLOB_TOKEN: ${{ secrets.VERCEL_BLOB_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           # Fetch URLs from GitHub Secrets (comma-separated)
           TARGET_URLS="${{ secrets.TARGET_URL }}"
-          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URL"
+          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URLS"
           
           # Loop through each URL
           for url in "${URL_ARRAY[@]}"; do
@@ -67,30 +76,31 @@ jobs:
             
             # Upload the report using the Node.js script and capture its output
             UPLOAD_OUTPUT=$(node scripts/uploadToVercelBlob.js "$REPORT_FILENAME")
-            echo "$UPLOAD_OUTPUT"
+            echo "Upload script output: $UPLOAD_OUTPUT"
             
             # Extract the public URL from the output (assumes it contains a URL starting with 'https://')
             REPORT_URL=$(echo "$UPLOAD_OUTPUT" | grep -o 'https://[^ ]*')
             echo "Extracted report URL: $REPORT_URL"
             
-            # Insert the run data along with the report URL into the database.
-            # Column order: url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url
-            echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url)
-            VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW(), '$REPORT_URL');" | psql "${{ secrets.DATABASE_URL }}"
+            if [ -z "$REPORT_URL" ]; then
+                echo "Error: No report URL extracted for $url"
+            else
+                # Insert the run data into the database.
+                # Column order: url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url
+                SQL="INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url)
+                VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW(), '$REPORT_URL');"
+                echo "$SQL"
+                echo "$SQL" | psql "$DATABASE_URL"
+            fi
             
             # Clean up the temporary directory
             rm -rf "$TEMP_DIR"
             echo "Temporary directory cleaned up: $TEMP_DIR"
           done
 
-      - name: Install Dependencies
-        run: npm install @vercel/blob
-
-      - name: Debug - Verify Files in Repo
+      - name: Debug - Final Check
         run: |
           echo "Current directory:"
           pwd
           echo "Listing all files in repo (recursively):"
           ls -R
-          echo "Listing files matching lighthouse_*.html:"
-          ls -al lighthouse_*.html || echo "No reports found!"
