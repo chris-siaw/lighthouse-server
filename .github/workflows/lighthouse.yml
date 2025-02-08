@@ -16,6 +16,9 @@ jobs:
       - name: Install jq (JSON Parser)
         run: sudo apt-get install -y jq
 
+      - name: Install Chromium (if required)
+        run: sudo apt-get install -y chromium-browser
+
       - name: Loop Through URLs from Secret
         run: |
           # Fetch URLs from GitHub Secrets
@@ -26,28 +29,41 @@ jobs:
           
           # Loop through each URL
           for url in "${URL_ARRAY[@]}"; do
+            echo "Testing accessibility for URL: $url"
+
+            # Check if the URL is reachable
+            echo "Validating URL: $url"
+            if ! curl -Is "$url" | head -n 1 | grep -q "200"; then
+              echo "Error: URL $url is not reachable. Skipping..."
+              continue
+            fi
+
+            # Run Lighthouse
             echo "Running Lighthouse for $url"
-            lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="lighthouse-report.html"
-            
-            PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
-            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
-            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
-            SEO=$(jq -r '.categories.seo.score * 100' report.json)
+            lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="report" 2>&1
 
-            # Log Variables for Debugging
-            echo "URL: $url"
-            echo "Performance: $PERFORMANCE"
-            echo "Accessibility: $ACCESSIBILITY"
-            echo "Best Practices: $BEST_PRACTICES"
-            echo "SEO: $SEO"
+            # Check if the report.report.json file exists
+            if [ ! -f report.report.json ]; then
+              echo "Error: Lighthouse did not generate report.report.json for $url. Skipping..."
+              continue
+            fi
 
-            # Store Results in Database
+            # Extract scores using jq
+            PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.report.json)
+            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.report.json)
+            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.report.json)
+            SEO=$(jq -r '.categories.seo.score * 100' report.report.json)
+
+            # Log results for debugging
+            echo "Performance: $PERFORMANCE, Accessibility: $ACCESSIBILITY, Best Practices: $BEST_PRACTICES, SEO: $SEO"
+
+            # Insert scores into the database
             echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
             VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());" | psql "${{ secrets.DATABASE_URL }}"
 
-            # Rename report with URL as identifier
+            # Rename and save the HTML report
             REPORT_FILENAME="lighthouse_$(echo $url | sed 's/[^a-zA-Z0-9]/_/g').html"
-            mv lighthouse-report.html "$REPORT_FILENAME"
+            mv report.html "$REPORT_FILENAME"
           done
 
       - name: Set up Node.js
