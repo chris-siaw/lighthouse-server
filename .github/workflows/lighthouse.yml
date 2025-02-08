@@ -31,20 +31,27 @@ jobs:
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
 
-            # Run Lighthouse and generate separate JSON and HTML reports
-            lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="report.json" --output-path="report.html"
+            # Create a temporary directory for reports
+            TEMP_DIR=$(mktemp -d)
+            echo "Temporary directory created: $TEMP_DIR"
+
+            # Run Lighthouse and store reports in the temporary directory
+            lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" \
+              --output-path="$TEMP_DIR/report.json" \
+              --output-path="$TEMP_DIR/report.html"
 
             # Check if the JSON report exists
-            if [ ! -f report.json ]; then
+            if [ ! -f "$TEMP_DIR/report.json" ]; then
               echo "Error: Lighthouse did not generate report.json for $url. Skipping..."
+              rm -rf "$TEMP_DIR"
               continue
             fi
 
             # Extract scores using jq
-            PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
-            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
-            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
-            SEO=$(jq -r '.categories.seo.score * 100' report.json)
+            PERFORMANCE=$(jq -r '.categories.performance.score * 100' "$TEMP_DIR/report.json")
+            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' "$TEMP_DIR/report.json")
+            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' "$TEMP_DIR/report.json")
+            SEO=$(jq -r '.categories.seo.score * 100' "$TEMP_DIR/report.json")
 
             # Log results for debugging
             echo "Performance: $PERFORMANCE, Accessibility: $ACCESSIBILITY, Best Practices: $BEST_PRACTICES, SEO: $SEO"
@@ -53,9 +60,13 @@ jobs:
             echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
             VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());" | psql "${{ secrets.DATABASE_URL }}"
 
-            # Rename and save the HTML report
+            # Rename and move the HTML report
             REPORT_FILENAME="lighthouse_$(echo $url | sed 's/[^a-zA-Z0-9]/_/g').html"
-            mv report.html "$REPORT_FILENAME"
+            mv "$TEMP_DIR/report.html" "$REPORT_FILENAME"
+
+            # Clean up temporary directory
+            rm -rf "$TEMP_DIR"
+            echo "Temporary directory cleaned up: $TEMP_DIR"
           done
 
       - name: Set up Node.js
