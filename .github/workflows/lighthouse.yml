@@ -29,20 +29,12 @@ jobs:
           
           # Loop through each URL
           for url in "${URL_ARRAY[@]}"; do
-            echo "Testing accessibility for URL: $url"
-
-            # Check if the URL is reachable
-            echo "Validating URL: $url"
-            if ! curl -Is "$url" | head -n 1 | grep -q "200"; then
-              echo "Error: URL $url is not reachable. Skipping..."
-              continue
-            fi
-
-            # Run Lighthouse
             echo "Running Lighthouse for $url"
+
+            # Run Lighthouse and generate JSON and HTML reports
             lighthouse "$url" --output=json --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="report" 2>&1
 
-            # Check if the report.report.json file exists
+            # Check if the JSON report exists
             if [ ! -f report.report.json ]; then
               echo "Error: Lighthouse did not generate report.report.json for $url. Skipping..."
               continue
