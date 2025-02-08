@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3  # Ensures repo files are available
+
       - name: Install Lighthouse CLI
         run: npm install -g lighthouse
 
@@ -80,10 +83,24 @@ jobs:
       - name: Install Dependencies
         run: npm install @vercel/blob
 
+      - name: Debug: Verify Files Before Upload
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Listing all files in repo:"
+          ls -R
+          echo "Checking for Lighthouse reports..."
+          ls -al lighthouse_*.html || echo "No reports found!"
+
       - name: Upload Lighthouse Reports to Vercel Blob
         env:
           VERCEL_BLOB_TOKEN: ${{ secrets.VERCEL_BLOB_TOKEN }}
         run: |
           for report in lighthouse_*.html; do
-            node scripts/uploadToVercelBlob.js "$report"
+            if [ -f "$report" ]; then
+              echo "Uploading: $report"
+              node lighthouse-server/scripts/uploadToVercelBlob.js "$report"
+            else
+              echo "Error: Report $report not found!"
+            fi
           done
