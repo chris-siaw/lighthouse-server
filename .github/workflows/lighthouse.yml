@@ -11,7 +11,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3  # Ensures repo files are available
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
 
       - name: Install Lighthouse CLI
         run: npm install -g lighthouse
@@ -22,13 +27,11 @@ jobs:
       - name: Install Chromium (if required)
         run: sudo apt-get install -y chromium-browser
 
-      - name: Loop Through URLs from Secret
+      - name: Loop Through URLs from Secret, Upload Reports & Store Report URL
         run: |
-          # Fetch URLs from GitHub Secrets
+          # Fetch URLs from GitHub Secrets (comma-separated)
           TARGET_URLS="${{ secrets.TARGET_URL }}"
-          
-          # Split URLs into an array
-          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URLS"
+          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URL"
           
           # Loop through each URL
           for url in "${URL_ARRAY[@]}"; do
@@ -36,15 +39,13 @@ jobs:
             TEMP_DIR=$(mktemp -d)
             echo "Temporary directory created: $TEMP_DIR"
             
-            # Run Lighthouse for JSON output
+            # Generate Lighthouse reports (JSON & HTML)
             lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" \
               --output-path="$TEMP_DIR/report.json"
-            
-            # Run Lighthouse for HTML output
             lighthouse "$url" --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" \
               --output-path="$TEMP_DIR/report.html"
             
-            # Check if the JSON report exists
+            # Verify JSON report exists; if not, skip this URL
             if [ ! -f "$TEMP_DIR/report.json" ]; then
               echo "Error: Lighthouse did not generate report.json for $url. Skipping..."
               rm -rf "$TEMP_DIR"
@@ -56,30 +57,31 @@ jobs:
             ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' "$TEMP_DIR/report.json")
             BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' "$TEMP_DIR/report.json")
             SEO=$(jq -r '.categories.seo.score * 100' "$TEMP_DIR/report.json")
-            
             echo "Performance: $PERFORMANCE, Accessibility: $ACCESSIBILITY, Best Practices: $BEST_PRACTICES, SEO: $SEO"
             
-            # Insert scores into the database
-            echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
-            VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());" | psql "${{ secrets.DATABASE_URL }}"
-            
-            # Construct a safe filename for the report
+            # Create a safe filename and move the HTML report to the working directory
             REPORT_FILENAME="lighthouse_$(echo $url | sed 's/[^a-zA-Z0-9]/_/g').html"
             mv "$TEMP_DIR/report.html" "$REPORT_FILENAME"
             echo "Moved report file to: $REPORT_FILENAME"
-            
-            # Debug: list the newly moved file
             ls -al "$REPORT_FILENAME"
+            
+            # Upload the report using the Node.js script and capture its output
+            UPLOAD_OUTPUT=$(node scripts/uploadToVercelBlob.js "$REPORT_FILENAME")
+            echo "$UPLOAD_OUTPUT"
+            
+            # Extract the public URL from the output (assumes it contains a URL starting with 'https://')
+            REPORT_URL=$(echo "$UPLOAD_OUTPUT" | grep -o 'https://[^ ]*')
+            echo "Extracted report URL: $REPORT_URL"
+            
+            # Insert the run data along with the report URL into the database.
+            # Note: Adjusting the column order to match: url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url
+            echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url)
+            VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW(), '$REPORT_URL');" | psql "${{ secrets.DATABASE_URL }}"
             
             # Clean up the temporary directory
             rm -rf "$TEMP_DIR"
             echo "Temporary directory cleaned up: $TEMP_DIR"
           done
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v2
-        with:
-          node-version: '16'
 
       - name: Install Dependencies
         run: npm install @vercel/blob
