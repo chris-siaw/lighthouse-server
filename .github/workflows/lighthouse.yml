@@ -16,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: '16'
+          node-version: '18'
 
       - name: Install Lighthouse CLI
         run: npm install -g lighthouse
@@ -40,7 +40,7 @@ jobs:
         run: |
           # Fetch URLs from GitHub Secrets (comma-separated)
           TARGET_URLS="${{ secrets.TARGET_URL }}"
-          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URLS"
+          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URL"
           
           # Loop through each URL
           for url in "${URL_ARRAY[@]}"; do
@@ -49,10 +49,8 @@ jobs:
             echo "Temporary directory created: $TEMP_DIR"
             
             # Generate Lighthouse reports (JSON & HTML)
-            lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" \
-              --output-path="$TEMP_DIR/report.json"
-            lighthouse "$url" --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" \
-              --output-path="$TEMP_DIR/report.html"
+            lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="$TEMP_DIR/report.json"
+            lighthouse "$url" --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="$TEMP_DIR/report.html"
             
             # Verify JSON report exists; if not, skip this URL
             if [ ! -f "$TEMP_DIR/report.json" ]; then
