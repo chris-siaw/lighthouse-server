@@ -73,6 +73,7 @@ jobs:
             # Clean up temporary directory
             rm -rf "$TEMP_DIR"
             echo "Temporary directory cleaned up: $TEMP_DIR"
+          done
 
       - name: Set up Node.js
         uses: actions/setup-node@v2
