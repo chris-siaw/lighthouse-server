@@ -1,4 +1,4 @@
-name: Run Lighthouse and Store Results with Blob Storage
+name: Run Lighthouse and Store Results for Multiple Pages
 
 on:
   schedule:
@@ -10,136 +10,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
+      - name: Install Lighthouse CLI
+        run: npm install -g lighthouse
 
-      - name: Install dependencies
-        run: |
-          npm install -g lighthouse puppeteer
-          npm install @vercel/blob
-          sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq (JSON Parser)
+        run: sudo apt-get install -y jq
 
-      - name: Run Lighthouse tests
-        env:
-          TARGET_URL: ${{ secrets.TARGET_URL }}
-          VERCEL_BLOB_TOKEN: ${{ secrets.VERCEL_BLOB_TOKEN }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Loop Through URLs from Secret
         run: |
-          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URL"
+          # Fetch URLs from GitHub Secrets
+          TARGET_URLS="${{ secrets.TARGET_URL }}"
           
+          # Split URLs into an array
+          IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URLS"
+          
+          # Loop through each URL
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
-          
-            # Create a unique directory for each run with full permissions
-            REPORT_DIR="/tmp/lighthouse-$(date +%s)"
-            mkdir -p "$REPORT_DIR"
-            chmod 777 "$REPORT_DIR"
-            
-            echo "Will save reports to: $REPORT_DIR"
-            
-            # Run Lighthouse with base filename
-            if ! lighthouse "$url" \
-              --output=json \
-              --output=html \
-              --quiet \
-              --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" \
-              --output-path="$REPORT_DIR/report" \
-              --save-assets \
-              --max-wait-for-load=30000 \
-              --only-categories=performance,accessibility,best-practices,seo; then
-              echo "Lighthouse analysis failed for $url"
-              echo "Contents of report directory:"
-              ls -la "$REPORT_DIR"
-              rm -rf "$REPORT_DIR"
-              continue
-            fi
-          
-            echo "Lighthouse analysis completed. Checking for report files..."
-            ls -la "$REPORT_DIR"
-          
-            # Check if report files were generated (using correct filenames)
-            if [ ! -f "$REPORT_DIR/report.report.html" ] || [ ! -f "$REPORT_DIR/report.report.json" ]; then
-              echo "Lighthouse report files not generated for $url"
-              echo "Contents of report directory:"
-              ls -la "$REPORT_DIR"
-              rm -rf "$REPORT_DIR"
-              continue
-            fi
-          
-            echo "Report files found. Processing results..."
-          
-            # Extract performance metrics with proper shell quoting
-            METRICS=$(jq -r '{"performance": .categories.performance.score, "accessibility": .categories.accessibility.score, "bestPractices": .categories["best-practices"].score, "seo": .categories.seo.score}' "$REPORT_DIR/report.report.json")
-            
-            PERFORMANCE=$(echo "$METRICS" | jq -r '.performance * 100')
-            ACCESSIBILITY=$(echo "$METRICS" | jq -r '.accessibility * 100')
-            BEST_PRACTICES=$(echo "$METRICS" | jq -r '.bestPractices * 100')
-            SEO=$(echo "$METRICS" | jq -r '.seo * 100')
-          
-            # Create Node.js script for uploading to Vercel Blob
-            cat > "$REPORT_DIR/upload.mjs" << 'EOL'
-            import { put } from '@vercel/blob';
-            import { readFileSync } from 'fs';
+            lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" > report.json
 
-            async function uploadToBlob(filePath, fileName) {
-              try {
-                const file = readFileSync(filePath);
-                const blob = await put(fileName, file, {
-                  access: 'public',
-                  token: process.env.VERCEL_BLOB_TOKEN
-                });
-                return blob.url;
-              } catch (error) {
-                console.error('Upload error:', error);
-                process.exit(1);
-              }
-            }
+            PERFORMANCE=$(jq -r '.categories.performance.score * 100' report.json)
+            ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' report.json)
+            BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' report.json)
+            SEO=$(jq -r '.categories.seo.score * 100' report.json)
 
-            const filePath = process.argv[2];
-            const fileName = process.argv[3];
+            # Log Variables for Debugging
+            echo "URL: $url"
+            echo "Performance: $PERFORMANCE"
+            echo "Accessibility: $ACCESSIBILITY"
+            echo "Best Practices: $BEST_PRACTICES"
+            echo "SEO: $SEO"
 
-            uploadToBlob(filePath, fileName)
-              .then(url => {
-                console.log(url);
-                process.exit(0);
-              })
-              .catch(error => {
-                console.error('Error:', error);
-                process.exit(1);
-              });
-            EOL
-          
-            # Make the script executable
-            chmod +x "$REPORT_DIR/upload.mjs"
-          
-            # Upload HTML report to Vercel Blob Storage using the SDK
-            REPORT_NAME="lighthouse-reports/$(date +%s)-$(echo "$url" | md5sum | cut -d' ' -f1).html"
-            echo "Uploading report to Vercel Blob Storage..."
-            
-            REPORT_URL=$(node "$REPORT_DIR/upload.mjs" "$REPORT_DIR/report.report.html" "$REPORT_NAME")
-            if [ $? -ne 0 ]; then
-              echo "Failed to upload report to Vercel Blob Storage for $url"
-              rm -rf "$REPORT_DIR"
-              continue
-            fi
-          
-            echo "Generated Report URL: $REPORT_URL"
-          
             # Store Results in Database
-            url_escaped=$(echo "$url" | sed 's/['"'"']/\\&/g')
-            report_url_escaped=$(echo "$REPORT_URL" | sed 's/['"'"']/\\&/g')
-            echo "Storing results in database..."
-            
-            if ! echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, report_url, timestamp)
-            VALUES ('$url_escaped', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, '$report_url_escaped', NOW());" | psql "$DATABASE_URL"; then
-              echo "Failed to store results in database for $url"
-              rm -rf "$REPORT_DIR"
-              continue
-            fi
-          
-            # Clean up temporary files
-            rm -rf "$REPORT_DIR"
-            echo "Successfully processed $url"
+            echo "INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp)
+            VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW());" | psql "${{ secrets.DATABASE_URL }}"
           done
