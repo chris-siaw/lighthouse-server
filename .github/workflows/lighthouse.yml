@@ -11,21 +11,21 @@ jobs:
     env:
       VERCEL_BLOB_TOKEN: ${{ secrets.VERCEL_BLOB_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # TARGET_URL should be a comma‐separated list of URLs you wish to test.
+      # TARGET_URL should be a comma-separated list of URLs to test.
       TARGET_URL: ${{ secrets.TARGET_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
+      - name: Setup Node.js (use Node 18)
         uses: actions/setup-node@v2
         with:
-          node-version: 16
+          node-version: 18
 
       - name: Install Lighthouse globally
         run: npm install -g lighthouse
 
-      - name: Install system packages
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y jq chromium-browser postgresql-client
@@ -36,6 +36,7 @@ jobs:
           IFS=',' read -r -a URL_ARRAY <<< "$TARGET_URL"
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
+            
             # Create a temporary directory for reports
             TEMP_DIR=$(mktemp -d)
             echo "Temporary directory created: $TEMP_DIR"
@@ -51,14 +52,14 @@ jobs:
               continue
             fi
             
-            # Extract the scores using jq
+            # Extract the scores using jq.
             PERFORMANCE=$(jq -r '.categories.performance.score * 100' "$TEMP_DIR/report.json")
             ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' "$TEMP_DIR/report.json")
             BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' "$TEMP_DIR/report.json")
             SEO=$(jq -r '.categories.seo.score * 100' "$TEMP_DIR/report.json")
             echo "Performance: $PERFORMANCE, Accessibility: $ACCESSIBILITY, Best Practices: $BEST_PRACTICES, SEO: $SEO"
             
-            # Create a safe filename from the URL and move the HTML report there.
+            # Create a safe filename based on the URL and move the HTML report there.
             REPORT_FILENAME="lighthouse_$(echo $url | sed 's/[^a-zA-Z0-9]/_/g').html"
             mv "$TEMP_DIR/report.html" "$REPORT_FILENAME"
             echo "Moved report file to: $REPORT_FILENAME"
@@ -76,7 +77,7 @@ jobs:
               echo "Error: No report URL extracted for $url"
             else
               # Insert the run data into the database.
-              # Column order: url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url
+              # Adjust the column order if your table is different.
               SQL="INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url) VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW(), '$REPORT_URL');"
               echo "$SQL"
               echo "$SQL" | psql "$DATABASE_URL"
