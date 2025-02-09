@@ -13,10 +13,10 @@ async function uploadFile(filePath) {
       token: process.env.VERCEL_BLOB_TOKEN,
     });
 
-    // Log the full result so we can see which property contains the public URL.
+    // Log the full result for debugging.
     console.log("Upload result:", JSON.stringify(result));
-    
-    // Assuming the public URL is in result.url (adjust if the API returns a different property)
+
+    // Adjust this if the public URL comes under a different property.
     console.log(`File uploaded successfully: ${result.url}`);
   } catch (error) {
     console.error('Error uploading file:', error);
@@ -24,7 +24,6 @@ async function uploadFile(filePath) {
   }
 }
 
-// Get the file path from the command line argument.
 const filePath = process.argv[2];
 if (!filePath) {
   console.error('Error: No file path provided');
