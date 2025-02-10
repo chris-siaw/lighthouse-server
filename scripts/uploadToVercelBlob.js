@@ -7,16 +7,14 @@ async function uploadFile(filePath) {
     const fileName = path.basename(filePath);
     const fileContent = await fs.readFile(filePath);
 
-    // Upload the file to Vercel Blob.
+    // Upload the file to Vercel Blob with public access.
     const result = await put(fileName, fileContent, {
       access: 'public',
       token: process.env.VERCEL_BLOB_TOKEN,
     });
 
-    // Log the full result for debugging.
-    console.log("Upload result:", JSON.stringify(result));
-
-    // Adjust this if the public URL comes under a different property.
+    // Log the full JSON response (includes "url" and "downloadUrl" properties).
+    console.log(JSON.stringify(result));
     console.log(`File uploaded successfully: ${result.url}`);
   } catch (error) {
     console.error('Error uploading file:', error);
@@ -24,6 +22,7 @@ async function uploadFile(filePath) {
   }
 }
 
+// Get the file path from the command line arguments.
 const filePath = process.argv[2];
 if (!filePath) {
   console.error('Error: No file path provided');
