@@ -17,13 +17,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Setup Node.js (use Node 18)
+      - name: Setup Node.js
         uses: actions/setup-node@v2
         with:
           node-version: 18
 
       - name: Install Lighthouse globally
         run: npm install -g lighthouse
+
+      - name: Install @vercel/blob locally
+        run: npm install @vercel/blob
 
       - name: Install system dependencies
         run: |
@@ -37,11 +40,11 @@ jobs:
           for url in "${URL_ARRAY[@]}"; do
             echo "Running Lighthouse for $url"
             
-            # Create a temporary directory for reports
+            # Create a temporary directory for the reports
             TEMP_DIR=$(mktemp -d)
             echo "Temporary directory created: $TEMP_DIR"
             
-            # Generate Lighthouse reports in JSON and HTML
+            # Generate Lighthouse reports in JSON and HTML formats
             lighthouse "$url" --output=json --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="$TEMP_DIR/report.json"
             lighthouse "$url" --output=html --quiet --chrome-flags="--no-sandbox --headless --disable-dev-shm-usage" --output-path="$TEMP_DIR/report.html"
             
@@ -52,14 +55,14 @@ jobs:
               continue
             fi
             
-            # Extract the scores using jq.
+            # Extract Lighthouse scores using jq.
             PERFORMANCE=$(jq -r '.categories.performance.score * 100' "$TEMP_DIR/report.json")
             ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' "$TEMP_DIR/report.json")
             BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' "$TEMP_DIR/report.json")
             SEO=$(jq -r '.categories.seo.score * 100' "$TEMP_DIR/report.json")
-            echo "Performance: $PERFORMANCE, Accessibility: $ACCESSIBILITY, Best Practices: $BEST_PRACTICES, SEO: $SEO"
+            echo "Scores - Performance: $PERFORMANCE, Accessibility: $ACCESSIBILITY, Best Practices: $BEST_PRACTICES, SEO: $SEO"
             
-            # Create a safe filename based on the URL and move the HTML report there.
+            # Create a safe filename based on the URL and move the HTML report.
             REPORT_FILENAME="lighthouse_$(echo $url | sed 's/[^a-zA-Z0-9]/_/g').html"
             mv "$TEMP_DIR/report.html" "$REPORT_FILENAME"
             echo "Moved report file to: $REPORT_FILENAME"
@@ -69,15 +72,14 @@ jobs:
             UPLOAD_OUTPUT=$(node scripts/uploadToVercelBlob.js "$REPORT_FILENAME")
             echo "Upload script output: $UPLOAD_OUTPUT"
             
-            # Extract the public URL from the output.
+            # Extract the public URL from the JSON response (from the "url" property)
             REPORT_URL=$(echo "$UPLOAD_OUTPUT" | grep -o 'https://[^ ]*')
             echo "Extracted report URL: $REPORT_URL"
             
             if [ -z "$REPORT_URL" ]; then
               echo "Error: No report URL extracted for $url"
             else
-              # Insert the run data into the database.
-              # Adjust the column order if your table is different.
+              # Insert the Lighthouse run data into the database.
               SQL="INSERT INTO lighthouse_tests (url, performance_score, accessibility_score, best_practices_score, seo_score, timestamp, report_url) VALUES ('$url', $PERFORMANCE, $ACCESSIBILITY, $BEST_PRACTICES, $SEO, NOW(), '$REPORT_URL');"
               echo "$SQL"
               echo "$SQL" | psql "$DATABASE_URL"
