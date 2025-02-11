@@ -7,14 +7,14 @@ async function uploadFile(filePath) {
     const fileName = path.basename(filePath);
     const fileContent = await fs.readFile(filePath);
 
-    // Upload the file to Vercel Blob.
+    // Upload the file to Vercel Blob with public access.
     const result = await put(fileName, fileContent, {
       access: 'public',
       token: process.env.VERCEL_BLOB_TOKEN,
     });
 
-    // Write only the public URL as JSON to stdout.
-    process.stdout.write(JSON.stringify({ url: result.url }));
+    // Output only the JSON response.
+    console.log(JSON.stringify(result));
   } catch (error) {
     console.error('Error uploading file:', error);
     process.exit(1);
