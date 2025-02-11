@@ -11,7 +11,7 @@ jobs:
     env:
       VERCEL_BLOB_TOKEN: ${{ secrets.VERCEL_BLOB_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # TARGET_URL should be a comma‐separated list of URLs to test.
+      # TARGET_URL should be a comma-separated list of URLs to test.
       TARGET_URL: ${{ secrets.TARGET_URL }}
     steps:
       - name: Checkout repository
@@ -22,13 +22,11 @@ jobs:
         with:
           node-version: 18
 
-      # (Optional) Ensure dependencies are installed.
-      # It is recommended to add "@vercel/blob" to your package.json dependencies.
-      - name: Install Dependencies
-        run: npm install
-
       - name: Install Lighthouse globally
         run: npm install -g lighthouse
+
+      - name: Install @vercel/blob locally
+        run: npm install @vercel/blob
 
       - name: Install system dependencies
         run: |
@@ -57,7 +55,7 @@ jobs:
               continue
             fi
             
-            # Extract the scores using jq.
+            # Extract Lighthouse scores using jq.
             PERFORMANCE=$(jq -r '.categories.performance.score * 100' "$TEMP_DIR/report.json")
             ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' "$TEMP_DIR/report.json")
             BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' "$TEMP_DIR/report.json")
