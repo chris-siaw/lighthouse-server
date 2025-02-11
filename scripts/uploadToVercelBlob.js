@@ -13,15 +13,14 @@ async function uploadFile(filePath) {
       token: process.env.VERCEL_BLOB_TOKEN,
     });
 
-    // Output only the public URL as JSON.
-    console.log(JSON.stringify({ url: result.url }));
+    // Write only the public URL as JSON to stdout.
+    process.stdout.write(JSON.stringify({ url: result.url }));
   } catch (error) {
     console.error('Error uploading file:', error);
     process.exit(1);
   }
 }
 
-// Get the file path from the command-line argument.
 const filePath = process.argv[2];
 if (!filePath) {
   console.error('Error: No file path provided');
