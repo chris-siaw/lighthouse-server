@@ -11,7 +11,7 @@ jobs:
     env:
       VERCEL_BLOB_TOKEN: ${{ secrets.VERCEL_BLOB_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # TARGET_URL should be a comma-separated list of URLs to test.
+      # TARGET_URL should be a comma‐separated list of URLs to test.
       TARGET_URL: ${{ secrets.TARGET_URL }}
     steps:
       - name: Checkout repository
@@ -24,9 +24,6 @@ jobs:
 
       - name: Install Lighthouse globally
         run: npm install -g lighthouse
-
-      - name: Install @vercel/blob locally
-        run: npm install @vercel/blob
 
       - name: Install system dependencies
         run: |
@@ -55,7 +52,7 @@ jobs:
               continue
             fi
             
-            # Extract Lighthouse scores using jq.
+            # Extract the scores using jq.
             PERFORMANCE=$(jq -r '.categories.performance.score * 100' "$TEMP_DIR/report.json")
             ACCESSIBILITY=$(jq -r '.categories.accessibility.score * 100' "$TEMP_DIR/report.json")
             BEST_PRACTICES=$(jq -r '.categories."best-practices".score * 100' "$TEMP_DIR/report.json")
@@ -72,8 +69,8 @@ jobs:
             UPLOAD_OUTPUT=$(node scripts/uploadToVercelBlob.js "$REPORT_FILENAME")
             echo "Upload script output: $UPLOAD_OUTPUT"
             
-            # Extract the public URL from the JSON response (from the "url" property)
-            REPORT_URL=$(echo "$UPLOAD_OUTPUT" | grep -o 'https://[^ ]*')
+            # Extract the public URL from the JSON output using jq.
+            REPORT_URL=$(echo "$UPLOAD_OUTPUT" | jq -r '.url')
             echo "Extracted report URL: $REPORT_URL"
             
             if [ -z "$REPORT_URL" ]; then
